@@ -1,12 +1,14 @@
 export interface ILoginUserPayload {
     email: string;
     password: string;
+    fcmToken?: string;
 }
 
 export interface IRegisterPayload {
     name: string;
     email: string;
     password: string;
+    fcmToken?: string;
 }
 
 export interface IChangePasswordPayload {
@@ -14,7 +16,15 @@ export interface IChangePasswordPayload {
     newPassword: string;
 }
 
+
 export interface IUpdateProfilePayload {
     name?: string;
     image?: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    bio?: string;
+    address?: string;
+    city?: string;
+    country?: string;
 }

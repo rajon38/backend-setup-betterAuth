@@ -1,102 +1,129 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import e, { NextFunction, Request, Response } from "express";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { NextFunction, Request, Response } from "express";
 import { envVars } from "../config/env";
 import status from "http-status";
 import z from "zod";
 import { TErrorResponse, TErrorSources } from "../interfaces/error.interface";
 import { handleZodError } from "../errorHelpers/handleZodError";
 import AppError from "../errorHelpers/AppError";
-import { cloudinaryDelete } from "../config/cloudinary.config";
 import { deleteUploadedFilesFromGlobalErrorHandler } from "../utils/deleteUploadedFilesFromGlobalErrorHandler";
 import { Prisma } from "../../generated/prisma/client";
-import { handlePrismaClientUnknownRequestError, handlePrismaClientValidationError, handlerPrismaClientInitializationError, handlerPrismaClientRustPanicError, PrismaClientKnownRequestError } from "../errorHelpers/handlePrismaErrors";
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export const globalErrorHandler = async(err: any, req: Request, res: Response) => {
-    if (envVars.NODE_ENV === "development") {
-        console.error("Error from globalErrorHandler:", err);
-    }
+import {
+  handlePrismaClientUnknownRequestError,
+  handlePrismaClientValidationError,
+  handlerPrismaClientInitializationError,
+  handlerPrismaClientRustPanicError,
+  PrismaClientKnownRequestError,
+} from "../errorHelpers/handlePrismaErrors";
 
-    // if (req.file) {
-    //     await cloudinaryDelete(req.file.path);
-    // }
+export const globalErrorHandler = async (
+  err: any,
+  req: Request,
+  res: Response,
+  _next: NextFunction  // ✅ Required — Express needs 4 args to detect error middleware
+) => {
+  // ── Dev logging ────────────────────────────────────────────────────────────
+  if (envVars.NODE_ENV === "development") {
+    console.error("Error from globalErrorHandler:", err);
+  }
 
-    // if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-    //     const imageUrls = req.files.map((file) => file.path);
-    //     await Promise.all(imageUrls.map((url) => cloudinaryDelete(url)));
-    // }
+  // ── Cleanup uploaded files ─────────────────────────────────────────────────
+  await deleteUploadedFilesFromGlobalErrorHandler(req);
 
-    await deleteUploadedFilesFromGlobalErrorHandler(req);
+  // ── Defaults ───────────────────────────────────────────────────────────────
+  let statusCode: number = status.INTERNAL_SERVER_ERROR;
+  let message: string;
+  let errorSources: TErrorSources[];
+  let stack: string | undefined = undefined;
 
-    let errorSources: TErrorSources[] = []
-    let statusCode: number = status.INTERNAL_SERVER_ERROR;
-    let message: string = "Internal Server Error";
-    let stack: string | undefined = undefined;
+  // ── Prisma: Known Request Error (P2xxx codes) ──────────────────────────────
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    const simplified = PrismaClientKnownRequestError(err);
+    statusCode = simplified.statusCode as number;
+    message = simplified.message;
+    errorSources = [...simplified.errorSources];
+    stack = err.stack;
 
+  // ── Prisma: Unknown Request Error ──────────────────────────────────────────
+  } else if (err instanceof Prisma.PrismaClientUnknownRequestError) {
+    const simplified = handlePrismaClientUnknownRequestError(err);
+    statusCode = simplified.statusCode as number;
+    message = simplified.message;
+    errorSources = [...simplified.errorSources];
+    stack = err.stack;
 
-    if(err instanceof Prisma.PrismaClientKnownRequestError){
-        const simplifiedError = PrismaClientKnownRequestError(err);
-        statusCode = simplifiedError.statusCode as number
-        message = simplifiedError.message
-        errorSources = [...simplifiedError.errorSources]
-        stack = err.stack;
-    }else if(err instanceof Prisma.PrismaClientUnknownRequestError){
-        const simplifiedError = handlePrismaClientUnknownRequestError(err);
-        statusCode = simplifiedError.statusCode as number
-        message = simplifiedError.message
-        errorSources = [...simplifiedError.errorSources]
-        stack = err.stack;
-    }else if(err instanceof Prisma.PrismaClientValidationError){
-        const simplifiedError = handlePrismaClientValidationError(err);
-        statusCode = simplifiedError.statusCode as number
-        message = simplifiedError.message
-        errorSources = [...simplifiedError.errorSources]
-        stack = err.stack;
-    }else if (err instanceof Prisma.PrismaClientRustPanicError) {
-        const simplifiedError = handlerPrismaClientRustPanicError();
-        statusCode = simplifiedError.statusCode as number
-        message = simplifiedError.message
-        errorSources = [...simplifiedError.errorSources]
-        stack = err.stack;
-    } else if(err instanceof Prisma.PrismaClientInitializationError){
-        const simplifiedError = handlerPrismaClientInitializationError(err);
-        statusCode = simplifiedError.statusCode as number
-        message = simplifiedError.message
-        errorSources = [...simplifiedError.errorSources]
-        stack = err.stack;
-    }else if( err instanceof z.ZodError) {
-        const simplifiedError = handleZodError(err);
-        statusCode = simplifiedError.statusCode as number;
-        message = simplifiedError.message;
-        errorSources = [...simplifiedError.errorSources];
-    } else if (err instanceof AppError) {
-        statusCode = err.statusCode;
-        message = err.message;
-        stack = err.stack;
-        errorSources = [
-            {
-                path: "",
-                message: err.message
-            }
-        ]
-    }else if (err instanceof Error) {
-        statusCode = status.INTERNAL_SERVER_ERROR;
-        message = err.message;
-        stack = err.stack;
-        errorSources = [
-            {
-                path: "",
-                message: err.message
-            }
-        ]
-    }
+  // ── Prisma: Validation Error ───────────────────────────────────────────────
+  } else if (err instanceof Prisma.PrismaClientValidationError) {
+    const simplified = handlePrismaClientValidationError(err);
+    statusCode = simplified.statusCode as number;
+    message = simplified.message;
+    errorSources = [...simplified.errorSources];
+    stack = err.stack;
 
-    const errorResponse : TErrorResponse = {
-        success: false,
-        message: message,
-        errorSources,
-        stack: envVars.NODE_ENV === "development" ? stack : undefined,
-        error: envVars.NODE_ENV === "development" ? err : undefined
-    };
+  // ── Prisma: Rust Panic Error ───────────────────────────────────────────────
+  } else if (err instanceof Prisma.PrismaClientRustPanicError) {
+    const simplified = handlerPrismaClientRustPanicError();
+    statusCode = simplified.statusCode as number;
+    message = simplified.message;
+    errorSources = [...simplified.errorSources];
+    stack = err.stack;
 
-    res.status(statusCode).json(errorResponse);
-}
+  // ── Prisma: Initialization Error ───────────────────────────────────────────
+  } else if (err instanceof Prisma.PrismaClientInitializationError) {
+    const simplified = handlerPrismaClientInitializationError(err);
+    statusCode = simplified.statusCode as number;
+    message = simplified.message;
+    errorSources = [...simplified.errorSources];
+    stack = err.stack;
+
+  // ── Zod Validation Error ───────────────────────────────────────────────────
+  } else if (err instanceof z.ZodError) {
+    const simplified = handleZodError(err);
+    statusCode = simplified.statusCode as number;
+    message = simplified.message;
+    errorSources = [...simplified.errorSources];
+    stack = (err as any).stack;   // ✅ added — was missing in your original
+
+  // ── Custom App Error ───────────────────────────────────────────────────────
+  } else if (err instanceof AppError) {
+    statusCode = err.statusCode;
+    message = err.message;
+    stack = err.stack;
+    errorSources = [{ path: "", message: err.message }];
+
+  // ── Malformed JSON body (from express.json()) ──────────────────────────────
+  // ✅ New — without this, a bad JSON body gives a confusing 500
+  } else if (err instanceof SyntaxError && "body" in err) {
+    statusCode = status.BAD_REQUEST;
+    message = "Malformed JSON in request body.";
+    stack = (err as SyntaxError).stack;
+    errorSources = [{ path: "body", message: message }];
+
+  // ── Generic Error fallback ─────────────────────────────────────────────────
+  } else if (err instanceof Error) {
+    statusCode = status.INTERNAL_SERVER_ERROR;
+    message = err.message;
+    stack = err.stack;
+    errorSources = [{ path: "", message: err.message }];
+
+  // ── Completely unknown throw (e.g. throw "some string") ───────────────────
+  // ✅ New — guards against non-Error throws
+  } else {
+    message = "An unexpected error occurred.";
+    errorSources = [{ path: "", message: String(err) }];
+  }
+
+  // ── Response ───────────────────────────────────────────────────────────────
+  const isDev = envVars.NODE_ENV === "development";
+
+  const errorResponse: TErrorResponse = {
+    success: false,
+    message,
+    errorSources,
+    stack: isDev ? stack : undefined,
+    error: isDev ? err : undefined,   // ✅ raw error only in dev
+  };
+
+  res.status(statusCode).json(errorResponse);
+};

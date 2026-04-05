@@ -1,0 +1,20 @@
+model profile {
+  id        String   @id
+  firstName String   @default("")
+  lastName  String   @default("")
+  phone     String?
+  image       String?
+  bio       String?
+  address     String @default("")
+  city        String @default("")
+  country     String @default("")
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  isDeleted Boolean  @default(false)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("profile")
+}

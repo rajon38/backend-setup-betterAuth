@@ -56,6 +56,7 @@ const resetPasswordZodSchema = z.object({
     .max(128, "Password must be less than 128 characters"),
 });
 
+
 export const AuthValidation = {
   registerZodSchema,
   loginZodSchema,

@@ -61,32 +61,17 @@ const register = async (payload: IRegisterPayload) => {
                 },
             });
         });
-        
-        const accessToken = tokenUtils.getAccessToken({
-            userId: user.id,
-            role: user.role,
-            name: user.name,
-            email: user.email,
-            status: user.status,
-            isDeleted: user.isDeleted,
-            emailVerified: user.emailVerified,
-        });
-        
-        const refreshToken = tokenUtils.getRefreshToken({
-            userId: user.id,
-            role: user.role,
-            name: user.name,
-            email: user.email,
-            status: user.status,
-            isDeleted: user.isDeleted,
-            emailVerified: user.emailVerified,
+
+        // Create user profile
+        await prisma.profile.create({
+            data: {
+                id: user.id,
+                userId: user.id,
+            }
         });
         
         return {
-            user,
-            accessToken,
-            refreshToken,
-            token: (authResponse as Record<string, unknown>).token || null,
+            user
         };
     } catch (error) {
         // If Prisma error, delete created user from better-auth
@@ -161,6 +146,9 @@ const getMe = async (user : IRequestUser) => {
     const isUserExists = await prisma.user.findUnique({
         where : {
             id : user.userId,
+        },
+        include : {
+            profile: true,
         }
     })
 
@@ -439,17 +427,47 @@ const googleLoginSuccess = async (session : Record<string, any>) =>{
 }
 
 const updateProfile = async (user: IRequestUser, payload: IUpdateProfilePayload) => {
-    const { name, image } = payload;
+    const { name, image, firstName, lastName, phone, bio, address, city, country } = payload;
 
-    const result = await prisma.user.update({
+    if(name){
+        await prisma.user.update({
+            where : {
+                id : user.userId,
+            },
+            data : {
+                name
+            }
+        })
+    }
+
+    // Update or create profile
+    const result = await prisma.profile.upsert({
         where: {
-            id: user.userId,
+            userId: user.userId,
         },
-        data: {
-            name,
-            image,
+        update: {
+            firstName: firstName ?? undefined,
+            lastName: lastName ?? undefined,
+            phone: phone ?? undefined,
+            bio: bio ?? undefined,
+            address: address ?? undefined,
+            city: city ?? undefined,
+            country: country ?? undefined,
+            image: image ? image : undefined, // Only update image if it's provided
+        },
+        create: {
+            id: user.userId,
+            userId: user.userId,
+            firstName: firstName ?? undefined,
+            lastName: lastName ?? undefined,
+            phone: phone ?? undefined,
+            bio: bio ?? undefined,
+            address: address ?? undefined,
+            city: city ?? undefined,
+            country: country ?? undefined,
+            image: image ? image : undefined, // Only set image if it's provided
         }
-    })
+    });
 
     return result;
 }

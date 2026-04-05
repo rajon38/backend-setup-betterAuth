@@ -14,21 +14,11 @@ import { IUpdateProfilePayload } from "./auth.interface";
 const register = catchAsync(async (req: Request, res: Response) => {
     const payload = req.body;
     const result = await AuthService.register(payload);
-    const { accessToken, refreshToken, token, ...rest } = result;
-
-    tokenUtils.setAccessTokenCookie(res, accessToken);
-    tokenUtils.setRefreshTokenCookie(res, refreshToken);
-    tokenUtils.setBetterAuthSessionCookie(res, token as string);
     sendResponse(res, {
         httpStatusCode: status.CREATED,
         success: true,
-        message: "Patient registered successfully",
-        data: {
-            accessToken,
-            refreshToken,
-            token,
-            ...rest
-        }
+        message: "User registered successfully",
+        data: result,
     });
 })
 
